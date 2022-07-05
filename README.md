@@ -35,3 +35,26 @@ rails generate model InvolvedCompany company:references game:references develope
 ```
 
 ## Asociaciones Básicas
+
+### User y Critics
+
+```ruby
+# user.rb
+class User < ApplicationRecord
+  has_many :critics
+end
+# critic.rb
+class Critic < ApplicationRecord
+  belongs_to :user
+end
+```
+
+### Join table (Game & Platform | Game & Genre)
+
+```bash
+ rails generate migration CreateJoinTableGamePlatform game platform
+```
+
+```bash
+ rails generate migration CreateJoinTableGameGenre game genre
+```
