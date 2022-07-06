@@ -212,3 +212,240 @@ end
 Critic.create!(title:"Mi critica al juego de gta", user_id: us
 er.id, criticable:gta)
 ```
+
+# Enums
+
+```ruby
+class Game < ApplicationRecord
+  enum :category, { main_game: 0, expansion: 1 }
+end
+```
+
+1. Con enum, vamos a decir que cierto campo de nuestro modelo, em este caso :category, va aceptar valores enteros y que estos enteros va a representar un valor distinto, si es 0 va a ser un main_game, si es 1 va ser expansion.
+
+2. Pero antes de ingresar un dato, vamos a definit un valor por default, que nuestros juegos si no le pasamos un valor en category, que venga por default en 0 (main_game).
+3. rails g migration AddDefaultCategoryToGames
+
+```ruby
+class AddDefaultCategoryToGame < ActiveRecord::Migration[7.0]
+  def change
+    change_column_default(:games, :category, from: nil, to: 0)
+  end
+end
+```
+
+```bash
+Game.create!(name:"Mario bros", category: 0)
+```
+
+# counter_caché
+
+1. Este counter_caché es un sumatorio, en terminos simples, es un método que recibe nuestro modelo critic con relación a la asociación que le pertece, este irá a buscar un campo llamado something_count y le sumará +1 al crearse una crítica.
+
+```ruby
+class Critic < ApplicationRecord
+  belongs_to :user, counter_cache: true
+  belongs_to :criticable, polymorphic: true
+end
+```
+
+# Validaciones
+
+### Critic:
+
+- title, body: required
+- title: max 40 characters
+
+```ruby
+class Critic < ApplicationRecord
+  validates :body, presence: true
+  validates :title, presence: true, length: { maximum: 40 }
+end
+```
+
+### Game:
+
+- name, category: required
+- name: unique
+- rating: between 0 and 100 (if provided)
+- parent_id: if the category is expansion, parent_id should be a valid game_id. If a category is main_game, parent_id should be null.
+
+```bash
+rails generate migration AddIndexToGame name:string:uniq
+```
+
+```ruby
+class AddIndexToGame < ActiveRecord::Migration[7.0]
+  def change
+    add_index :games, :name, unique: true
+  end
+end
+```
+
+```ruby
+class Game < ApplicationRecord
+  validates :name, :category, presence: true
+  validates :name, uniqueness: true
+  validates :rating, comparison: { greater_than_or_equal_to: 0,
+                                  less_than_or_equal_to: 100,
+                                  allow_nil: true
+                                  }
+  validate :validate_parent
+
+  # has_many :involved_companies, dependent: :destroy
+  # has_many :companies, through: :involved_companies
+  # has_and_belongs_to_many :platforms
+  # has_many :expansions, class_name: "Game",
+  #                       foreign_key: "parent_id",
+  #                       dependent: :destroy,
+  #                       inverse_of: "parent"
+  # belongs_to :parent, class_name: "Game", optional: true
+  # has_many :critics, as: :criticable, dependent: :destroy
+  # enum :category, { main_game: 0, expansion: 1 }
+
+  private
+
+  def validate_parent
+    if category == "main_game" && parent_id
+      errors.add(:parent_id, "Should be null")
+    elsif category == "expansion" && Game.find_by(id: parent_id).nil?
+      errors.add(:parent_id, "Should be a valid game id")
+    end
+  end
+end
+
+```
+
+### User
+
+- username, email: required and unique
+- birth_date: before 16 years from now. Message: You should be 16 years old to create an account (this one requires custom validations)
+
+```bash
+rails generate migration AddIndexUsernameEmailToUser username:string:uniq email:string:uniq
+```
+
+1. Si piden que sea único debemos de realizar una migración para cambiar el valor a un indice único en la columna de la DB.
+
+```ruby
+# migración
+class AddIndexUsernameEmailToUser < ActiveRecord::Migration[7.0]
+  def change
+    add_index :users, :username, unique: true
+    add_index :users, :email, unique: true
+  end
+end
+```
+
+# Ojo: Para agregar una columna
+
+```bash
+rails generate migration AddBirthDateToUser birth_date:date
+```
+
+```ruby
+class User < ApplicationRecord
+  validates :username, :email, presence: true, uniqueness: true
+  validate :sixteen_or_older
+  has_many :critics, dependent: :destroy
+
+  private
+  def sixteen_or_older
+    return if birth_date >= 16.years.ago
+
+    errors.add(:birth_date, "You should be 16 years old to create an account")
+  end
+end
+
+```
+
+### Platform:
+
+- name, category: required
+- name: unique
+
+```bash
+rails generate migration AddNameUniqueToPlatform name:string:uniq
+```
+
+```ruby
+class Platform < ApplicationRecord
+  validates :name, :category, presence: true
+  validates :name, uniqueness: true
+
+
+  has_and_belongs_to_many :games
+  enum :category, { console: 0, arcade: 1, platform: 2, operating_system: 3, portable_console: 4, computer: 5 }
+end
+```
+
+### Genre:
+
+- name: required and unique
+
+```bash
+rails generate migration AddIndexNameToGenre name:string:uniq
+```
+
+```ruby
+# migration
+class AddIndexNameToGenre < ActiveRecord::Migration[7.0]
+  def change
+    add_index :genres, :name, unique: true
+  end
+end
+# genre.rb
+class Genre < ApplicationRecord
+  validates :name, presence: true, uniqueness: true
+end
+```
+
+### Company:
+
+name: required and unique
+
+```bash
+rails generate migration AddIndexNameToCompany name:string:uniq
+```
+
+```ruby
+# migration
+class AddIndexNameToCompany < ActiveRecord::Migration[7.0]
+  def change
+    add_index :companies, :name, unique: true
+  end
+end
+# company.rb
+class Company < ApplicationRecord
+  validates :name, presence: true, uniqueness: true
+end
+```
+
+### InvolvedCompany:
+
+- developer, publisher: required
+- company_id and game_id should be a unique combination
+
+```ruby
+class InvolvedCompany < ApplicationRecord
+  validates :developer, :publisher, inclusion: { in: [true, false]}
+  # no lo podemos hacer presence: true, ya que en el caso de poner un valor que de falso, esto dará un error y lo tomará como blank
+  validates :company, uniqueness: { scope: :game, message: "and Game combination alredy taken"}
+  # podemos juntar validaciones con el scope
+
+  belongs_to :company
+  belongs_to :game
+end
+```
+
+```bash
+rails g migration AddIndexCompanyGameToInvolvedCompany
+```
+
+```ruby
+class AddIndexCompanyGameToInvolvedCompany < ActiveRecord::Migration[7.0]
+  def change
+    add_index :involved_companies, [:game_id, :company_id] , unique: true
+  end
+end
+```
